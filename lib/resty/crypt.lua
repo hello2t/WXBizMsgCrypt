@@ -23,8 +23,7 @@ local function unpack_text_len(text_len)
 end
 
 local function pkcs7_encode(text)
-    local text_length = #text
-    local amount_to_pad = 32 - (text_length % 32)
+    local amount_to_pad = 32 - (#text % 32)
 
     if amount_to_pad == 0 then
         amount_to_pad = 32
@@ -86,11 +85,8 @@ function _M.decrypt (self, encrypted)
     text = pkcs7_decode(string.sub(text, 17, #text))
 
     local xml_len = unpack_text_len(string.sub(text, 1, 4))
-    local xml_content = string.sub(text, 4 + 1, xml_len + 4)
 
-    local form_appid = string.sub(text, xml_len + 4 + 1)
-
-    return xml_content
+    return string.sub(text, 4 + 1, xml_len + 4)
 end
 
 
