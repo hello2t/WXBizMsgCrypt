@@ -1,10 +1,11 @@
 local random = require "resty.random"
 local str = require "resty.string"
-local aes = require "resty.aes"
+local aes = require "resty.aes_pad"
 local bit = require "bit"
 local resty_sha1 = require "resty.sha1"
+local setmetatable = setmetatable
 
-local _M = {}
+local _M = { _VERSION = '0.2' }
 
 local mt = { __index = _M }
 
@@ -52,7 +53,9 @@ end
 
 function _M.new (self, token, aes_key, app_id)
     local aes_key = ngx.decode_base64(aes_key .. "=")
-    return setmetatable({token = token, aes_key = aes_key, app_id = app_id}, mt)
+    local cipher = aes.cipher(256, "cbc")
+    local iv = string.sub(aes_key, 0, 16)
+    return setmetatable({token = token, aes_key = aes_key, app_id = app_id, cipher = cipher, iv = iv}, mt)
 end
 
 function _M.get_sha1 (self, sha1_table)
@@ -77,8 +80,9 @@ function _M.decrypt (self, encrypted)
 
     local iv = string.sub(self.aes_key, 0, 16)
     local aes_crypt = assert(
-        aes:new(self.aes_key, nil, aes.cipher(256,"cbc"), {iv=iv}, nil, 0)
+        aes:new(self.aes_key, nil, self.cipher, {iv = self.iv})
     )
+    aes:set_padding(0)
 
     local text = aes_crypt:decrypt(ciphertext_dec)
     text = pkcs7_decode(string.sub(text, 17, #text))
@@ -90,15 +94,15 @@ end
 
 
 function _M.encrypt (self, text, timestamp, nonce)
-    local random = str.to_hex(random.bytes(8, true))
-    local iv = string.sub(self.aes_key, 0, 16)
+    local prefix = str.to_hex(random.bytes(8, true))
 
-    text = random .. pack_text_len(#text) .. text .. self.app_id
+    text = prefix .. pack_text_len(#text) .. text .. self.app_id
     text = pkcs7_encode(text)
 
     local aes_crypt = assert(
-        aes:new(self.aes_key, nil, aes.cipher(256,"cbc"), {iv=iv}, nil, 0)
+        aes:new(self.aes_key, nil, self.cipher, {iv = self.iv})
     )
+    aes:set_padding(0)
 
     local encrypted = ngx.encode_base64(aes_crypt:encrypt(text))
     local signature = self:get_sha1({self.token, timestamp, nonce, encrypted})
