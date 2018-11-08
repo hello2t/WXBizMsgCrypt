@@ -82,7 +82,7 @@ function _M.decrypt (self, encrypted)
     local aes_crypt = assert(
         aes:new(self.aes_key, nil, self.cipher, {iv = self.iv})
     )
-    aes:set_padding(0)
+    aes_crypt:set_padding(0)
 
     local text = aes_crypt:decrypt(ciphertext_dec)
     text = pkcs7_decode(string.sub(text, 17, #text))
@@ -102,7 +102,7 @@ function _M.encrypt (self, text, timestamp, nonce)
     local aes_crypt = assert(
         aes:new(self.aes_key, nil, self.cipher, {iv = self.iv})
     )
-    aes:set_padding(0)
+    aes_crypt:set_padding(0)
 
     local encrypted = ngx.encode_base64(aes_crypt:encrypt(text))
     local signature = self:get_sha1({self.token, timestamp, nonce, encrypted})
