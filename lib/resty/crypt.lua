@@ -56,12 +56,11 @@ function _M.new (self, token, aes_key, app_id)
 end
 
 function _M.get_sha1 (self, sha1_table)
-    table.sort(sha1_table)
+    local tb_sort = table.sort
+    tb_sort(sha1_table)
 
-    local to_sha1 = ""
-    for k,v in pairs(sha1_table) do
-        to_sha1 = to_sha1 .. v
-    end
+    local tb_join = table.concat
+    local to_sha1 = tb_join(sha1_table)
 
     local sha1 = resty_sha1:new()
     sha1:update(to_sha1)
