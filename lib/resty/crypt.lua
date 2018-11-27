@@ -3,66 +3,64 @@ local str = require "resty.string"
 local aes = require "resty.aes_pad"
 local bit = require "bit"
 local resty_sha1 = require "resty.sha1"
-local setmetatable = setmetatable
+local setmetatable, assert = setmetatable, assert
+local str_char, str_sub, str_byte, str_format = string.char, string.sub, string.byte, string.format
+local decode_base64, encode_base64 = ngx.decode_base64, ngx.encode_base64
 
 local _M = { _VERSION = '0.2' }
 
 local mt = { __index = _M }
 
 local function pack_text_len(text_len)
-    return string.char(
-        bit.band(bit.rshift(text_len, 24), 0xff),
-        bit.band(bit.rshift(text_len, 16), 0xff),
-        bit.band(bit.rshift(text_len, 8), 0xff),
-        bit.band(text_len, 0xff)
+    local band, rshift, mask = bit.band, bit.rshift, 0xff
+    return str_char(
+        band(rshift(text_len, 24), mask),
+        band(rshift(text_len, 16), mask),
+        band(rshift(text_len, 8), mask),
+        band(text_len, mask)
     )
 end
 
 local function unpack_text_len(text_len)
-    local a, b, c, d = string.byte(text_len, 1, 4)
-    return bit.bor(bit.lshift(a, 24), bit.lshift(b, 16), bit.lshift(c, 8), d), 1 + 4
+    local bor, lshift = bit.bor, bit.lshift
+    local a, b, c, d = str_byte(text_len, 1, 4)
+    return bor(lshift(a, 24), lshift(b, 16), lshift(c, 8), d), 1 + 4
 end
 
 local function pkcs7_encode(text)
-    local amount_to_pad = 32 - (#text % 32)
+    local PAD_BLOCK_LENGTH = 32
+    local amount_to_pad = PAD_BLOCK_LENGTH - (#text % PAD_BLOCK_LENGTH)
 
     if amount_to_pad == 0 then
-        amount_to_pad = 32
+        amount_to_pad = PAD_BLOCK_LENGTH
     end
+    local str_pad = str_char(amount_to_pad):rep(amount_to_pad)
 
-    local padding = ""
-
-    local pad = string.char(amount_to_pad)
-
-    for i = 1, amount_to_pad do
-        padding = padding .. pad
-    end
-
-    return text .. padding
+    return text .. str_pad
 end
 
 local function pkcs7_decode(text)
-    local pad = string.byte(text, #text - 1)
+    local pad = str_byte(text, #text - 1)
 
     if (pad < 1 or pad > 32) then
         pad = 0
     end
 
-    return string.sub(text, 1, #text - pad);
+    return str_sub(text, 1, #text - pad);
 end
 
 function _M.new (self, token, aes_key, app_id)
-    local aes_key = ngx.decode_base64(aes_key .. "=")
+    local aes_key = decode_base64(aes_key .. "=")
     local cipher = aes.cipher(256, "cbc")
-    local iv = string.sub(aes_key, 0, 16)
+    local iv = str_sub(aes_key, 0, 16)
+
     return setmetatable({token = token, aes_key = aes_key, app_id = app_id, cipher = cipher, iv = iv}, mt)
 end
 
 function _M.get_sha1 (self, sha1_table)
-    local tb_sort = table.sort
+    local tb_sort, tb_join = table.sort, table.concat
     tb_sort(sha1_table)
 
-    local tb_join = table.concat
     local to_sha1 = tb_join(sha1_table)
 
     local sha1 = resty_sha1:new()
@@ -72,26 +70,24 @@ function _M.get_sha1 (self, sha1_table)
 end
 
 function _M.decrypt (self, encrypted)
-    local ciphertext_dec = ngx.decode_base64(encrypted)
+    local ciphertext_dec = decode_base64(encrypted)
 
     if ciphertext_dec == nil then
         return nil
     end
 
-    local iv = string.sub(self.aes_key, 0, 16)
     local aes_crypt = assert(
         aes:new(self.aes_key, nil, self.cipher, {iv = self.iv})
     )
     aes_crypt:set_padding(0)
 
     local text = aes_crypt:decrypt(ciphertext_dec)
-    text = pkcs7_decode(string.sub(text, 17, #text))
+    text = pkcs7_decode(str_sub(text, 17, #text))
 
-    local xml_len = unpack_text_len(string.sub(text, 1, 4))
+    local xml_len = unpack_text_len(str_sub(text, 1, 4))
 
-    return string.sub(text, 4 + 1, xml_len + 4)
+    return str_sub(text, 4 + 1, xml_len + 4)
 end
-
 
 function _M.encrypt (self, text, timestamp, nonce)
     local prefix = str.to_hex(random.bytes(8, true))
@@ -104,11 +100,11 @@ function _M.encrypt (self, text, timestamp, nonce)
     )
     aes_crypt:set_padding(0)
 
-    local encrypted = ngx.encode_base64(aes_crypt:encrypt(text))
+    local encrypted = encode_base64(aes_crypt:encrypt(text))
     local signature = self:get_sha1({self.token, timestamp, nonce, encrypted})
     local xml_content = "<xml><Encrypt><![CDATA[%s]]></Encrypt><MsgSignature><![CDATA[%s]]></MsgSignature><TimeStamp>%s</TimeStamp><Nonce><![CDATA[%s]]></Nonce></xml>";
 
-    return string.format(xml_content, encrypted, signature, timestamp, nonce)
+    return str_format(xml_content, encrypted, signature, timestamp, nonce)
 end
 
 return _M

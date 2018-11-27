@@ -36,7 +36,7 @@ server {
 
             local gsub = ngx.re.gsub
             sample = gsub(encrypted, [=[.*<Encrypt>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</Encrypt>.*]=], "$1")
-	        ngx.say("the sample decrypted: ", wxmc:decrypt(sample))
+            ngx.say("the sample decrypted: ", wxmc:decrypt(sample))
         }
     }
 }
